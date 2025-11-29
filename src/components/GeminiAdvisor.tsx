@@ -30,7 +30,7 @@ const GeminiAdvisor: React.FC<Props> = ({ contextData }) => {
   };
 
   return (
-    <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+    <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
       <div className="flex items-center space-x-3 mb-4">
         <Bot className="h-6 w-6 text-white" />
         <h2 className="text-xl font-bold">Ask AI Agricultural Advisor</h2>

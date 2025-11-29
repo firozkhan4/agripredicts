@@ -1,4 +1,4 @@
-import type { FarmRecord } from '../type';
+import type { FarmRecord, FarmData } from '../type';
 
 // Raw CSV Data provided in the prompt
 const CSV_DATA = `farm_id,region,crop_type,soil_moisture_%,soil_pH,temperature_C,rainfall_mm,humidity_%,sunlight_hours,irrigation_type,fertilizer_type,pesticide_usage_ml,sowing_date,harvest_date,total_days,yield_kg_per_hectare,sensor_id,timestamp,latitude,longitude,NDVI_index,crop_disease_status
@@ -63,7 +63,23 @@ FARM0058,North India,Maize,18.52,5.75,26.29,67.15,78.26,5.24,Sprinkler,Organic,1
 FARM0059,South India,Wheat,33.14,5.55,15.3,247.5,51.9,5.94,Sprinkler,Inorganic,7.36,2024-03-14,2024-07-15,123,2454.6,SENS0059,2024-03-22,21.906149,85.560341,0.61,None
 FARM0060,South USA,Soybean,17.75,6.73,29.54,277.19,72.95,5.81,Drip,Organic,49.94,2024-02-14,2024-06-26,133,2431.85,SENS0060,2024-06-06,11.837268,71.61581,0.66,None`;
 
-export const getFarmData = (): FarmRecord[] => {
+// Convert FarmRecord to FarmData
+const convertToFarmData = (record: FarmRecord, index: number): FarmData => {
+  return {
+    id: index + 1,
+    cropType: record.crop_type,
+    ph: record.soil_pH,
+    nitrogen: record.soil_moisture * 0.1, // Example calculation from moisture
+    phosphorus: record.sunlight_hours * 0.05, // Example calculation from sunlight
+    potassium: record.yield_kg * 0.001, // Example calculation from yield
+    temperature: record.temperature,
+    humidity: record.humidity,
+    rainfall: record.rainfall
+  };
+};
+
+// Get data as FarmRecord[] (for components that need the raw CSV structure)
+export const getFarmRecords = (): FarmRecord[] => {
   const lines = CSV_DATA.trim().split('\n');
   const headers = lines[0].split(',');
   console.log(headers)
@@ -87,6 +103,81 @@ export const getFarmData = (): FarmRecord[] => {
   });
 };
 
+// Get data as FarmData[] (for your existing components)
+export const getFarmData = (): FarmData[] => {
+  const farmRecords = getFarmRecords();
+  return farmRecords.map((record, index) => convertToFarmData(record, index));
+};
+
 export const getAllCrops = (data: FarmRecord[]): string[] => {
   return Array.from(new Set(data.map(d => d.crop_type))).sort();
+};
+
+// Parse uploaded CSV and convert to FarmData
+export const parseCSVData = (file: File): Promise<FarmData[]> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const csvText = e.target?.result as string;
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+
+        if (lines.length < 2) {
+          reject(new Error('CSV file is empty or has no data rows'));
+          return;
+        }
+
+        const headers = lines[0].split(',').map(header => header.trim());
+        const parsedData: FarmData[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(value => value.trim());
+
+          if (values.length !== headers.length) {
+            console.warn(`Skipping row ${i + 1}: column count mismatch`);
+            continue;
+          }
+
+          const row: any = {};
+          headers.forEach((header, index) => {
+            const value = values[index];
+            const numValue = Number(value);
+            row[header] = isNaN(numValue) ? value : numValue;
+          });
+
+          // Create FarmRecord from CSV row
+          const farmRecord: FarmRecord = {
+            farm_id: row.farm_id || `uploaded_${i}`,
+            region: row.region || 'unknown',
+            crop_type: row.crop_type || row.crop_type || 'unknown',
+            soil_moisture: Number(row.soil_moisture || row.soil_moisture_ || 0),
+            soil_pH: Number(row.soil_pH || row.soil_ph || 7.0),
+            temperature: Number(row.temperature || row.temperature_C || 0),
+            rainfall: Number(row.rainfall || row.rainfall_mm || 0),
+            humidity: Number(row.humidity || row.humidity_ || 0),
+            sunlight_hours: Number(row.sunlight_hours || 0),
+            yield_kg: Number(row.yield_kg || row.yield_kg_per_hectare || 0),
+            disease_status: row.disease_status || row.crop_disease_status || 'unknown'
+          };
+
+          // Convert to FarmData for your components
+          const farmData = convertToFarmData(farmRecord, i);
+          parsedData.push(farmData);
+        }
+
+        if (parsedData.length === 0) {
+          reject(new Error('No valid data found in CSV file'));
+          return;
+        }
+
+        resolve(parsedData);
+      } catch (error) {
+        reject(new Error(`Failed to parse CSV: ${error}`));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
 };

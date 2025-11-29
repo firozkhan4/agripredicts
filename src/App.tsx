@@ -4,32 +4,48 @@ import StatsCards from './components/StatsCards';
 import FeatureSelector from './components/FeatureSelector';
 import PredictionModel from './components/PredictionModel';
 import GeminiAdvisor from './components/GeminiAdvisor';
-import { getFarmData } from './services/dataService';
-import type { FeatureStats } from './type';
-import { FeatureType } from './type';
+import FileUpload from './components/FileUpload';
+import { getFarmData, parseCSVData } from './services/dataService';
+import type { FeatureStats, FarmData } from './type';
+import { FeatureType } from './type'; // This should work with your current type definition
 import { analyzeFeatures } from './utils/mlUtils';
 
 const App: React.FC = () => {
-  // Load data once
-  const farmData = useMemo(() => getFarmData(), []);
+  // Default data
+  const defaultFarmData = useMemo(() => getFarmData(), []);
 
-  // Calculate feature stats on mount
+  // State for farm data and uploaded data
+  const [farmData, setFarmData] = useState<FarmData[]>(defaultFarmData);
+  const [selectedFeature, setSelectedFeature] = useState<FeatureType>(FeatureType.PH);
+
+  // Calculate feature stats
   const featureStats: FeatureStats[] = useMemo(() => analyzeFeatures(farmData), [farmData]);
 
-  // State
-  const [selectedFeature, setSelectedFeature] = useState<FeatureType>(FeatureType.PH);
+  // Handle file upload
+  const handleFileUpload = async (file: File) => {
+    try {
+      const parsedData = await parseCSVData(file);
+      setFarmData(parsedData);
+    } catch (error) {
+      console.error('Error parsing CSV:', error);
+      alert('Error parsing CSV file. Please check the format.');
+    }
+  };
+
+  // Reset to default data
+  const handleResetData = () => {
+    setFarmData(defaultFarmData);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-slate-900">
       <Header />
 
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-8 sm:px-6 lg:px-8">
-
         {/* Top Stats Overview */}
         <StatsCards data={farmData} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
           {/* Main Content Column */}
           <div className="lg:col-span-2 space-y-8">
             <FeatureSelector
@@ -47,6 +63,19 @@ const App: React.FC = () => {
           {/* Sidebar / Assistant Column */}
           <div className="lg:col-span-1 space-y-6">
             <div className="sticky top-24 space-y-6">
+              {/* Add File Upload Component */}
+              <FileUpload onFileUpload={handleFileUpload} />
+
+              {/* Add Reset Button */}
+              <div className="bg-white rounded-xl shadow p-6">
+                <button
+                  onClick={handleResetData}
+                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  Reset to Default Data
+                </button>
+              </div>
+
               <GeminiAdvisor contextData={featureStats} />
 
               {/* Additional Info / Context */}

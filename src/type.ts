@@ -12,7 +12,17 @@ export interface FarmRecord {
   disease_status: string;
 }
 
-
+export interface FarmData {
+  id: number;
+  cropType: string;
+  ph: number;
+  nitrogen: number;
+  phosphorus: number;
+  potassium: number;
+  temperature: number;
+  humidity: number;
+  rainfall: number;
+}
 
 export const FeatureType = {
   PH: 'soil_pH',
@@ -27,7 +37,7 @@ export type FeatureType = typeof FeatureType[keyof typeof FeatureType];
 export interface FeatureStats {
   feature: FeatureType;
   accuracy: number;
-  fScore: number; // A simplified variance ratio score
+  fScore: number;
   description: string;
 }
 
