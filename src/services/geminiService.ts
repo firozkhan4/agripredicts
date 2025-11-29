@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
 const getClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = import.meta.env.VITE_API_KEY
+  return new GoogleGenAI({ apiKey });
 };
 
 export const getAgriculturalInsight = async (question: string, contextData: string): Promise<string> => {
