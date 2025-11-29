@@ -1,0 +1,5 @@
+{
+  "name": "AgriPredict",
+  "description": "A predictive modeling dashboard for agriculture that helps farmers select the optimal crop based on single-variable soil and environmental feature analysis.",
+  "requestFramePermissions": []
+}
