@@ -7,8 +7,9 @@ import GeminiAdvisor from './components/GeminiAdvisor';
 import FileUpload from './components/FileUpload';
 import { getFarmData, parseCSVData } from './services/dataService';
 import type { FeatureStats, FarmData } from './type';
-import { FeatureType } from './type'; // This should work with your current type definition
+import { FeatureType } from './type';
 import { analyzeFeatures } from './utils/mlUtils';
+import DataAnalysis from './components/DataAnalysis';
 
 const App: React.FC = () => {
   // Default data
@@ -16,7 +17,11 @@ const App: React.FC = () => {
 
   // State for farm data and uploaded data
   const [farmData, setFarmData] = useState<FarmData[]>(defaultFarmData);
-  const [selectedFeature, setSelectedFeature] = useState<FeatureType>(FeatureType.PH);
+  const [selectedFeatures, setSelectedFeatures] = useState<FeatureType[]>([
+    FeatureType.PH,
+    FeatureType.NITROGEN
+  ]);
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   // Calculate feature stats
   const featureStats: FeatureStats[] = useMemo(() => analyzeFeatures(farmData), [farmData]);
@@ -37,63 +42,115 @@ const App: React.FC = () => {
     setFarmData(defaultFarmData);
   };
 
+  // Handle feature selection (multi-select)
+  const handleFeatureSelect = (features: FeatureType[]) => {
+    setSelectedFeatures(features);
+  };
+
+  // Handle feature toggle
+  const handleFeatureToggle = (feature: FeatureType) => {
+    setSelectedFeatures(prev => {
+      if (prev.includes(feature)) {
+        return prev.filter(f => f !== feature);
+      } else {
+        return [...prev, feature];
+      }
+    });
+  };
+
+  const handleShowAnalysis = () => {
+    setShowAnalysis(!showAnalysis)
+  }
+
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-slate-900">
-      <Header />
+      <Header handleShowAnalysis={handleShowAnalysis} />
 
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        {/* Top Stats Overview */}
-        <StatsCards data={farmData} />
+      {showAnalysis ? <DataAnalysis data={farmData} /> : (
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content Column */}
-          <div className="lg:col-span-2 space-y-8">
-            <FeatureSelector
-              stats={featureStats}
-              selectedFeature={selectedFeature}
-              onSelect={setSelectedFeature}
-            />
+        <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          {/* Top Stats Overview */}
+          <StatsCards data={farmData} />
 
-            <PredictionModel
-              data={farmData}
-              selectedFeature={selectedFeature}
-            />
-          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Main Content Column */}
+            <div className="lg:col-span-2 space-y-8">
+              <FeatureSelector
+                stats={featureStats}
+                selectedFeatures={selectedFeatures}
+                onSelect={handleFeatureSelect}
+                onFeatureToggle={handleFeatureToggle}
+              />
 
-          {/* Sidebar / Assistant Column */}
-          <div className="lg:col-span-1 space-y-6">
-            <div className="sticky top-24 space-y-6">
-              {/* Add File Upload Component */}
-              <FileUpload onFileUpload={handleFileUpload} />
+              <PredictionModel
+                data={farmData}
+                selectedFeatures={selectedFeatures}
+              />
+            </div>
 
-              {/* Add Reset Button */}
-              <div className="bg-white rounded-xl shadow p-6">
-                <button
-                  onClick={handleResetData}
-                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  Reset to Default Data
-                </button>
-              </div>
+            {/* Sidebar / Assistant Column */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="sticky top-24 space-y-6">
+                {/* Add File Upload Component */}
+                <FileUpload onFileUpload={handleFileUpload} />
 
-              <GeminiAdvisor contextData={featureStats} />
+                {/* Add Reset Button */}
+                <div className="bg-white rounded-xl shadow p-6">
+                  <button
+                    onClick={handleResetData}
+                    className="w-full bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                  >
+                    Reset to Default Data
+                  </button>
+                </div>
 
-              {/* Additional Info / Context */}
-              <div className="bg-white rounded-xl shadow p-6">
-                <h3 className="font-bold text-gray-800 mb-2">Project Context</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  This dashboard simulates a data science pipeline for crop recommendation.
-                </p>
-                <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
-                  <li><strong>Input:</strong> Raw farm sensor data (CSV).</li>
-                  <li><strong>Feature Selection:</strong> Calculates variance ratios to find the single most predictive soil attribute.</li>
-                  <li><strong>Model:</strong> Uses Gaussian Naive Bayes classification to predict crop types based on the selected single feature.</li>
-                </ul>
+                <GeminiAdvisor contextData={featureStats} />
+
+                {/* Selected Features Info */}
+                <div className="bg-white rounded-xl shadow p-6">
+                  <h3 className="font-bold text-gray-800 mb-3">Selected Features</h3>
+                  <div className="space-y-2">
+                    {selectedFeatures.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">No features selected</p>
+                    ) : (
+                      selectedFeatures.map(feature => (
+                        <div key={feature} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700">{feature}</span>
+                          <button
+                            onClick={() => handleFeatureToggle(feature)}
+                            className="text-red-500 hover:text-red-700 text-xs"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {selectedFeatures.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-3">
+                      Using {selectedFeatures.length} feature{selectedFeatures.length > 1 ? 's' : ''} for prediction
+                    </p>
+                  )}
+                </div>
+
+                {/* Additional Info / Context */}
+                <div className="bg-white rounded-xl shadow p-6">
+                  <h3 className="font-bold text-gray-800 mb-2">Project Context</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    This dashboard simulates a data science pipeline for crop recommendation.
+                  </p>
+                  <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
+                    <li><strong>Input:</strong> Raw farm sensor data (CSV).</li>
+                    <li><strong>Feature Selection:</strong> Multi-feature Gaussian Naive Bayes classification.</li>
+                    <li><strong>Model:</strong> Uses multiple soil attributes for more accurate predictions.</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
       <footer className="bg-white border-t border-gray-200 mt-12 py-8">
         <div className="max-w-7xl mx-auto px-4 text-center text-gray-500 text-sm">

@@ -1,4 +1,4 @@
-import type { FarmRecord, PredictionResult, FeatureStats } from '../type';
+import type { FarmData, PredictionResult, FeatureStats } from '../type';
 import { FeatureType } from '../type';
 
 // Helper to calculate mean and standard deviation
@@ -17,29 +17,44 @@ const calculateProbability = (x: number, mean: number, std: number) => {
   return (1 / (Math.sqrt(2 * Math.PI) * std)) * exponent;
 };
 
-export const analyzeFeatures = (data: FarmRecord[]): FeatureStats[] => {
+// Helper function to get feature value from FarmData
+const getFeatureValue = (data: FarmData, feature: FeatureType): number => {
+  switch (feature) {
+    case FeatureType.PH: return data.ph;
+    case FeatureType.NITROGEN: return data.nitrogen;
+    case FeatureType.PHOSPHORUS: return data.phosphorus;
+    case FeatureType.POTASSIUM: return data.potassium;
+    case FeatureType.TEMPERATURE: return data.temperature;
+    case FeatureType.HUMIDITY: return data.humidity;
+    case FeatureType.RAINFALL: return data.rainfall;
+    default: return 0;
+  }
+};
+
+export const analyzeFeatures = (data: FarmData[]): FeatureStats[] => {
   const features = [
     FeatureType.PH,
-    FeatureType.MOISTURE,
+    FeatureType.NITROGEN,
+    FeatureType.PHOSPHORUS,
+    FeatureType.POTASSIUM,
     FeatureType.TEMPERATURE,
-    FeatureType.RAINFALL,
-    FeatureType.HUMIDITY
+    FeatureType.HUMIDITY,
+    FeatureType.RAINFALL
   ];
 
   return features.map(feature => {
     // Group data by crop
-    const crops = Array.from(new Set(data.map(d => d.crop_type)));
+    const crops = Array.from(new Set(data.map(d => d.cropType)));
     const cropGroups: Record<string, number[]> = {};
 
     crops.forEach(crop => {
       cropGroups[crop] = data
-        .filter(d => d.crop_type === crop)
-        .map(d => d[feature === FeatureType.PH ? 'soil_pH' : feature === FeatureType.MOISTURE ? 'soil_moisture' : feature]);
+        .filter(d => d.cropType === crop)
+        .map(d => getFeatureValue(d, feature));
     });
 
     // Calculate F-Score (Variance between means / Average variance within)
-    // This is a simplified ANOVA F-statistic proxy to rank feature importance
-    const globalMean = getStats(data.map(d => d[feature === FeatureType.PH ? 'soil_pH' : feature === FeatureType.MOISTURE ? 'soil_moisture' : feature])).mean;
+    const globalMean = getStats(data.map(d => getFeatureValue(d, feature))).mean;
 
     let betweenVariance = 0;
     let withinVariance = 0;
@@ -54,14 +69,21 @@ export const analyzeFeatures = (data: FarmRecord[]): FeatureStats[] => {
     // Avoid division by zero
     const fScore = withinVariance === 0 ? 0 : betweenVariance / withinVariance;
 
-    // Normalize accuracy simulation based on F-Score (higher separation = better accuracy)
-    // This is a heuristic for the UI simulation
+    // Calculate correlation with crop type (simplified)
+    const correlation = Math.min(1, fScore / 10);
+
+    // Normalize accuracy simulation based on F-Score
     const simulatedAccuracy = Math.min(0.98, 0.4 + (Math.log(fScore + 1) / 10));
+
+    // Calculate importance (combination of F-score and correlation)
+    const importance = (fScore * 0.7 + correlation * 0.3) / 10;
 
     return {
       feature,
       fScore,
       accuracy: simulatedAccuracy,
+      importance,
+      correlation,
       description: getDescription(feature)
     };
   });
@@ -70,7 +92,9 @@ export const analyzeFeatures = (data: FarmRecord[]): FeatureStats[] => {
 const getDescription = (feature: FeatureType): string => {
   switch (feature) {
     case FeatureType.PH: return "Acidity or alkalinity of soil.";
-    case FeatureType.MOISTURE: return "Water content in the soil.";
+    case FeatureType.NITROGEN: return "Nitrogen content in the soil.";
+    case FeatureType.PHOSPHORUS: return "Phosphorus content in the soil.";
+    case FeatureType.POTASSIUM: return "Potassium content in the soil.";
     case FeatureType.TEMPERATURE: return "Ambient temperature during growth.";
     case FeatureType.RAINFALL: return "Total rainfall during the season.";
     case FeatureType.HUMIDITY: return "Relative humidity levels.";
@@ -78,46 +102,84 @@ const getDescription = (feature: FeatureType): string => {
   }
 };
 
-export const predictCrop = (data: FarmRecord[], feature: FeatureType, value: number): PredictionResult => {
-  const crops = Array.from(new Set(data.map(d => d.crop_type)));
+// Multi-feature prediction function
+export const predictCropMultiFeature = (
+  data: FarmData[],
+  features: FeatureType[],
+  values: Record<FeatureType, number>
+): PredictionResult => {
+  if (features.length === 0) {
+    throw new Error('No features selected for prediction');
+  }
+
+  const crops = Array.from(new Set(data.map(d => d.cropType)));
   const probabilities: Record<string, number> = {};
+  const featureContributions: Record<FeatureType, number> = {} as Record<FeatureType, number>;
   let totalProb = 0;
 
-  // Train a simple Gaussian Naive Bayes model on the fly
+  // Initialize feature contributions
+  features.forEach(feature => {
+    featureContributions[feature] = 0;
+  });
+
+  // Train a multi-feature Gaussian Naive Bayes model
   crops.forEach(crop => {
-    const cropData = data
-      .filter(d => d.crop_type === crop)
-      .map(d => d[feature === FeatureType.PH ? 'soil_pH' : feature === FeatureType.MOISTURE ? 'soil_moisture' : feature]);
+    let posterior = 1.0;
 
-    const { mean, std } = getStats(cropData);
-    // Prior probability (simplified to uniform if balanced, but let's use actual counts)
+    // Calculate prior probability
+    const cropData = data.filter(d => d.cropType === crop);
     const prior = cropData.length / data.length;
-    const likelihood = calculateProbability(value, mean, std);
 
-    const posterior = likelihood * prior;
+    // Calculate likelihood for each feature
+    features.forEach(feature => {
+      const featureValue = values[feature];
+      const cropFeatureData = cropData.map(d => getFeatureValue(d, feature));
+
+      const { mean, std } = getStats(cropFeatureData);
+      const likelihood = calculateProbability(featureValue, mean, std);
+
+      posterior *= likelihood;
+
+      // Track feature contribution (simplified)
+      featureContributions[feature] += likelihood;
+    });
+
+    // Multiply by prior
+    posterior *= prior;
     probabilities[crop] = posterior;
     totalProb += posterior;
   });
 
-  // Normalize
+  // Normalize feature contributions
+  features.forEach(feature => {
+    featureContributions[feature] = featureContributions[feature] / crops.length;
+  });
+
+  // Normalize probabilities and find prediction
   let maxProb = -1;
   let predictedCrop = "Unknown";
 
   if (totalProb === 0) {
-    // Fallback to nearest mean if probability underflow
-    let minDiff = Infinity;
+    // Fallback: find crop with closest average feature values
+    let minDistance = Infinity;
     crops.forEach(crop => {
-      const cropData = data
-        .filter(d => d.crop_type === crop)
-        .map(d => d[feature === FeatureType.PH ? 'soil_pH' : feature === FeatureType.MOISTURE ? 'soil_moisture' : feature]);
-      const { mean } = getStats(cropData);
-      const diff = Math.abs(mean - value);
-      if (diff < minDiff) {
-        minDiff = diff;
+      const cropData = data.filter(d => d.cropType === crop);
+      let distance = 0;
+
+      features.forEach(feature => {
+        const featureValue = values[feature];
+        const cropFeatureData = cropData.map(d => getFeatureValue(d, feature));
+        const { mean } = getStats(cropFeatureData);
+        distance += Math.pow(mean - featureValue, 2);
+      });
+
+      distance = Math.sqrt(distance);
+      if (distance < minDistance) {
+        minDistance = distance;
         predictedCrop = crop;
-        maxProb = 1.0; // Artificial confidence
+        maxProb = 1.0;
       }
-      probabilities[crop] = 0; // Reset for visual consistency if needed
+      probabilities[crop] = 0;
     });
     probabilities[predictedCrop] = 1;
   } else {
@@ -130,10 +192,32 @@ export const predictCrop = (data: FarmRecord[], feature: FeatureType, value: num
     });
   }
 
-
   return {
     predictedCrop,
     confidence: maxProb,
-    probabilities
+    probabilities,
+    featuresUsed: features,
+    featureContributions
   };
+};
+
+export const predictCrop = (data: FarmData[], feature: FeatureType, value: number): PredictionResult => {
+  // Create a record with all features set to 0, then override the selected feature
+  const initialValues: Record<FeatureType, number> = {
+    [FeatureType.PH]: 0,
+    [FeatureType.NITROGEN]: 0,
+    [FeatureType.PHOSPHORUS]: 0,
+    [FeatureType.POTASSIUM]: 0,
+    [FeatureType.TEMPERATURE]: 0,
+    [FeatureType.HUMIDITY]: 0,
+    [FeatureType.RAINFALL]: 0,
+  };
+
+  // Set the actual value for the selected feature
+  const values = {
+    ...initialValues,
+    [feature]: value
+  };
+
+  return predictCropMultiFeature(data, [feature], values);
 };
